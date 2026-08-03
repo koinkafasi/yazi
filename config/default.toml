@@ -1,0 +1,127 @@
+# imlec-typer — particle cursor effect
+# Linux:   ~/.config/particle-cursor/config.toml
+# Windows: %APPDATA%\particle-cursor\config.toml
+#
+# Edits are picked up live; no restart needed.
+
+[general]
+enabled = true
+fps = 60
+max_particles = 600
+cursor_height_px = 20.0
+offset_x = 0.0
+offset_y = 0.0
+combo_enabled = true
+combo_window_ms = 600
+combo_max_multiplier = 2.5
+min_emit_interval_ms = 16
+fallback_content = "shape"
+
+[typing]
+enabled = true
+count = 6
+shape = "circle"
+size_ratio = 0.5
+size_jitter = 0.4
+lifetime_ms = 500
+lifetime_jitter = 0.3
+speed = 130.0
+speed_jitter = 0.6
+direction_deg = -90.0
+spread_deg = 140.0
+gravity = 320.0
+drag = 1.8
+rotation_speed = 3.0
+shrink = true
+
+[typing.content]
+mode = "shape"
+emoji_set = ["🔥", "💥", "✨", "⚡", "🎯", "💻", "🚀", "⭐"]
+symbol_set = ["{", "}", ";", "/", "<", ">", "=", "+", "-", "*", "&", "|", "!", "?"]
+
+[typing.effects]
+glow = true
+explode = true
+trail = false
+rotate_3d = false
+
+[typing.color]
+mode = "palette"
+colors = ["#ff2d95", "#ff9f1c", "#2de2e6", "#a06cff", "#f9f871"]
+
+[deleting]
+enabled = true
+count = 8
+shape = "spark"
+size_ratio = 0.5
+size_jitter = 0.4
+lifetime_ms = 340
+lifetime_jitter = 0.3
+speed = 90.0
+speed_jitter = 0.6
+direction_deg = 90.0
+spread_deg = 360.0
+gravity = -60.0
+drag = 1.8
+rotation_speed = 3.0
+shrink = true
+
+[deleting.content]
+mode = "emoji"
+emoji_set = ["💨", "❌", "🗑️", "💥"]
+
+[deleting.effects]
+glow = false
+explode = true
+trail = false
+rotate_3d = false
+
+[deleting.color]
+mode = "fixed"
+color = "#ff3b30"
+
+[preset.matrix]
+name = "Matrix"
+content_mode = "random_symbol"
+color_mode = "fixed"
+color = "#00ff41"
+glow = true
+gravity = 80
+drag = 0.5
+speed = 60
+
+[preset.fireworks]
+name = "Fireworks"
+content_mode = "emoji"
+emoji_set = ["🎆", "✨", "⭐", "🎇", "💫"]
+explode = true
+gravity = -40
+spread_deg = 360
+speed = 100
+
+[preset.typewriter]
+name = "Typewriter"
+content_mode = "glyph"
+color_mode = "fixed"
+color = "#d4a373"
+size_ratio = 0.7
+gravity = 250
+lifetime_ms = 400
+
+[preset.rainbow_code]
+name = "Rainbow Code"
+content_mode = "glyph"
+color_mode = "rainbow"
+rotate_3d = true
+speed = 150
+spread_deg = 180
+
+[preset.minimal]
+name = "Minimal"
+content_mode = "shape"
+shape = "circle"
+color_mode = "fixed"
+color = "#888888"
+count = 3
+gravity = 400
+lifetime_ms = 300
