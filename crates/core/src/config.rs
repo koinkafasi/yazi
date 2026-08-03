@@ -87,14 +87,20 @@ pub struct Config {
 pub struct General {
     pub enabled: bool,
     pub fps: u32,
+    /// Hard cap on simultaneously live particles. Oldest are recycled past this.
     pub max_particles: usize,
+    /// Reference cursor height in px. Particle size is a ratio of this.
     pub cursor_height_px: f32,
+    /// Nudge the emission point relative to the pointer hotspot.
     pub offset_x: f32,
     pub offset_y: f32,
+    /// Consecutive keystrokes ramp up particle count, power-mode style.
     pub combo_enabled: bool,
     pub combo_window_ms: u64,
     pub combo_max_multiplier: f32,
+    /// Keystrokes closer together than this emit nothing (protects against key repeat floods).
     pub min_emit_interval_ms: u64,
+    /// Fallback content mode for system-wide overlay (shapes only in overlay).
     #[serde(default = "default_fallback_content")]
     pub fallback_content: String,
 }
@@ -110,24 +116,37 @@ pub struct Emitter {
     pub count: u32,
     pub shape: Shape,
     pub color: ColorMode,
+    /// Particle size = general.cursor_height_px * size_ratio.
     pub size_ratio: f32,
+    /// 0.0 = uniform size, 1.0 = size varies across the full range.
     pub size_jitter: f32,
     pub lifetime_ms: u64,
     pub lifetime_jitter: f32,
+    /// Initial speed in px/s.
     pub speed: f32,
     pub speed_jitter: f32,
+    /// Emission cone centre, degrees. 0 = right, -90 = up.
     pub direction_deg: f32,
+    /// Cone width, degrees. 360 = omnidirectional.
     pub spread_deg: f32,
+    /// Downward acceleration, px/s^2. Negative floats particles upward.
     pub gravity: f32,
+    /// Velocity damping per second.
     pub drag: f32,
+    /// Radians per second.
     pub rotation_speed: f32,
+    /// Particles shrink to nothing over their lifetime.
     pub shrink: bool,
+    /// What content this emitter spawns.
     #[serde(default)]
     pub content: ParticleContent,
+    /// Visual effects (editor-only).
     #[serde(default)]
     pub effects: Effects,
+    /// Emoji pool for Emoji content mode.
     #[serde(default = "default_emoji_set")]
     pub emoji_set: Vec<String>,
+    /// Symbol pool for RandomSymbol content mode.
     #[serde(default = "default_symbol_set")]
     pub symbol_set: Vec<String>,
 }
@@ -218,7 +237,9 @@ impl Default for Config {
                 name: "Matrix".to_string(),
                 content_mode: "random_symbol".to_string(),
                 emitter: Emitter {
-                    color: ColorMode::Fixed { color: "#00ff41".into() },
+                    color: ColorMode::Fixed {
+                        color: "#00ff41".into(),
+                    },
                     gravity: 80.0,
                     drag: 0.5,
                     speed: 60.0,
@@ -252,7 +273,9 @@ impl Default for Config {
                 name: "Typewriter".to_string(),
                 content_mode: "glyph".to_string(),
                 emitter: Emitter {
-                    color: ColorMode::Fixed { color: "#d4a373".into() },
+                    color: ColorMode::Fixed {
+                        color: "#d4a373".into(),
+                    },
                     size_ratio: 0.7,
                     gravity: 250.0,
                     lifetime_ms: 400,
@@ -269,7 +292,9 @@ impl Default for Config {
                 emitter: Emitter {
                     count: 3,
                     shape: Shape::Circle,
-                    color: ColorMode::Fixed { color: "#888888".into() },
+                    color: ColorMode::Fixed {
+                        color: "#888888".into(),
+                    },
                     gravity: 400.0,
                     lifetime_ms: 300,
                     ..Emitter::default()
@@ -283,7 +308,9 @@ impl Default for Config {
             deleting: Emitter {
                 count: 8,
                 shape: Shape::Spark,
-                color: ColorMode::Fixed { color: "#ff3b30".into() },
+                color: ColorMode::Fixed {
+                    color: "#ff3b30".into(),
+                },
                 speed: 90.0,
                 direction_deg: 90.0,
                 spread_deg: 360.0,
@@ -308,6 +335,7 @@ impl Config {
         Ok(dirs.config_dir().join("config.toml"))
     }
 
+    /// Loads the config, writing out a commented default if none exists.
     pub fn load_or_init() -> Result<Self> {
         let path = Self::config_path()?;
         if !path.exists() {
@@ -328,6 +356,7 @@ impl Config {
         Ok(cfg.validated())
     }
 
+    /// Clamps out-of-range values rather than failing, so a bad hand-edit degrades gracefully.
     pub fn validated(mut self) -> Self {
         self.general.fps = self.general.fps.clamp(15, 240);
         self.general.max_particles = self.general.max_particles.clamp(1, 20_000);
@@ -348,6 +377,10 @@ impl Config {
 }
 
 pub const DEFAULT_TOML: &str = include_str!("../../../config/default.toml");
+
+// ────────────────────────────────────────────
+// Tests
+// ────────────────────────────────────────────
 
 #[cfg(test)]
 mod tests {
