@@ -1,36 +1,302 @@
 {
   "name": "imlec-typer",
-  "displayName": "imlec-typer",
-  "description": "Particle effects at your cursor while typing — letters, digits, emojis, shapes",
+  "displayName": "imlec-typer — Power Mode for Coders",
+  "description": "Particle effects at your cursor while typing — letters, digits, emojis, symbols, shapes",
   "version": "0.1.0",
   "publisher": "koinkafasi",
-  "engines": { "vscode": "^1.74.0" },
-  "categories": ["Other"],
-  "activationEvents": ["onStartupFinished"],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/koinkafasi/yazi"
+  },
+  "bugs": {
+    "url": "https://github.com/koinkafasi/yazi/issues"
+  },
+  "homepage": "https://github.com/koinkafasi/yazi#readme",
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "categories": ["Other", "Visualization", "Themes"],
+  "keywords": ["particles", "power-mode", "cursor", "effects", "typing", "animation"],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
   "main": "./out/extension.js",
   "contributes": {
     "configuration": {
       "title": "imlec-typer",
       "properties": {
-        "imlec-typer.enabled": { "type": "boolean", "default": true, "description": "Enable particle effects" }
+        "imlec-typer.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable particle effects",
+          "scope": "resource"
+        },
+        "imlec-typer.preset": {
+          "type": "string",
+          "default": "typewriter",
+          "enum": ["matrix", "fireworks", "typewriter", "rainbow", "minimal"],
+          "enumDescriptions": [
+            "Matrix: green symbols falling down",
+            "Fireworks: colorful emojis bursting upward",
+            "Typewriter: typed characters with warm glow",
+            "Rainbow: multicolor glyphs rotating in 3D",
+            "Minimal: subtle grey circles"
+          ],
+          "description": "Active particle preset",
+          "scope": "resource"
+        },
+        "imlec-typer.contentMode": {
+          "type": "string",
+          "default": "glyph",
+          "enum": ["glyph", "random_digit", "random_letter", "random_symbol", "emoji", "shape"],
+          "enumDescriptions": [
+            "Glyph: the actual character you typed",
+            "Random digit: 0-9",
+            "Random letter: a-zA-Z",
+            "Random symbol: { } ; / < > = + - * & | ! ?",
+            "Emoji: random from emoji set",
+            "Shape: geometric shapes ● ■ ▲ ◆"
+          ],
+          "description": "What content spawns as particles",
+          "scope": "resource"
+        },
+        "imlec-typer.colorMode": {
+          "type": "string",
+          "default": "palette",
+          "enum": ["fixed", "palette", "gradient", "rainbow"],
+          "enumDescriptions": [
+            "Fixed: single color",
+            "Palette: rotate through color list",
+            "Gradient: interpolate between two colors",
+            "Rainbow: animated HSL rainbow"
+          ],
+          "description": "Color mode for particles",
+          "scope": "resource"
+        },
+        "imlec-typer.colorFixed": {
+          "type": "string",
+          "default": "#ff2d95",
+          "description": "Fixed color (when colorMode is 'fixed')",
+          "scope": "resource"
+        },
+        "imlec-typer.colorPalette": {
+          "type": "array",
+          "default": ["#ff2d95", "#ff9f1c", "#2de2e6", "#a06cff", "#f9f871"],
+          "items": { "type": "string" },
+          "description": "Palette colors (when colorMode is 'palette')",
+          "scope": "resource"
+        },
+        "imlec-typer.colorGradientFrom": {
+          "type": "string",
+          "default": "#ff2d95",
+          "description": "Gradient start color",
+          "scope": "resource"
+        },
+        "imlec-typer.colorGradientTo": {
+          "type": "string",
+          "default": "#2de2e6",
+          "description": "Gradient end color",
+          "scope": "resource"
+        },
+        "imlec-typer.count": {
+          "type": "number",
+          "default": 6,
+          "minimum": 1,
+          "maximum": 50,
+          "description": "Particles per keystroke",
+          "scope": "resource"
+        },
+        "imlec-typer.size": {
+          "type": "number",
+          "default": 14,
+          "minimum": 8,
+          "maximum": 48,
+          "description": "Particle font size in px",
+          "scope": "resource"
+        },
+        "imlec-typer.gravity": {
+          "type": "number",
+          "default": 320,
+          "minimum": -1000,
+          "maximum": 1000,
+          "description": "Downward acceleration (px/s², negative = float up)",
+          "scope": "resource"
+        },
+        "imlec-typer.speed": {
+          "type": "number",
+          "default": 130,
+          "minimum": 0,
+          "maximum": 1000,
+          "description": "Initial speed (px/s)",
+          "scope": "resource"
+        },
+        "imlec-typer.spreadDeg": {
+          "type": "number",
+          "default": 140,
+          "minimum": 0,
+          "maximum": 360,
+          "description": "Emission cone width (degrees)",
+          "scope": "resource"
+        },
+        "imlec-typer.lifetimeMs": {
+          "type": "number",
+          "default": 500,
+          "minimum": 100,
+          "maximum": 3000,
+          "description": "Particle lifetime in milliseconds",
+          "scope": "resource"
+        },
+        "imlec-typer.glow": {
+          "type": "boolean",
+          "default": true,
+          "description": "Text-shadow glow effect",
+          "scope": "resource"
+        },
+        "imlec-typer.explode": {
+          "type": "boolean",
+          "default": true,
+          "description": "Outward burst on keypress",
+          "scope": "resource"
+        },
+        "imlec-typer.trail": {
+          "type": "boolean",
+          "default": false,
+          "description": "Leave fading trail behind particles",
+          "scope": "resource"
+        },
+        "imlec-typer.rotate3d": {
+          "type": "boolean",
+          "default": false,
+          "description": "CSS 3D rotation effect",
+          "scope": "resource"
+        },
+        "imlec-typer.comboEnabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Fast typing ramps particle count",
+          "scope": "resource"
+        },
+        "imlec-typer.comboMaxMultiplier": {
+          "type": "number",
+          "default": 2.5,
+          "minimum": 1,
+          "maximum": 10,
+          "description": "Max combo multiplier",
+          "scope": "resource"
+        },
+        "imlec-typer.emojiSet": {
+          "type": "array",
+          "default": ["🔥", "💥", "✨", "⚡", "🎯", "💻", "🚀", "⭐"],
+          "items": { "type": "string" },
+          "description": "Emoji pool for emoji content mode",
+          "scope": "resource"
+        },
+        "imlec-typer.symbolSet": {
+          "type": "array",
+          "default": ["{", "}", ";", "/", "<", ">", "=", "+", "-", "*", "&", "|", "!", "?"],
+          "items": { "type": "string" },
+          "description": "Symbol pool for random_symbol mode",
+          "scope": "resource"
+        },
+        "imlec-typer.checkUpdates": {
+          "type": "boolean",
+          "default": true,
+          "description": "Check for extension updates on startup",
+          "scope": "resource"
+        }
       }
     },
     "commands": [
-      { "command": "imlec-typer.toggle", "title": "Toggle imlec-typer", "category": "imlec" },
-      { "command": "imlec-typer.preset.matrix", "title": "Preset: Matrix", "category": "imlec" },
-      { "command": "imlec-typer.preset.fireworks", "title": "Preset: Fireworks", "category": "imlec" },
-      { "command": "imlec-typer.preset.typewriter", "title": "Preset: Typewriter", "category": "imlec" },
-      { "command": "imlec-typer.preset.minimal", "title": "Preset: Minimal", "category": "imlec" }
+      {
+        "command": "imlec-typer.toggle",
+        "title": "Toggle Effects",
+        "category": "imlec-typer",
+        "icon": "$(play)"
+      },
+      {
+        "command": "imlec-typer.settings",
+        "title": "Open Settings Panel",
+        "category": "imlec-typer",
+        "icon": "$(gear)"
+      },
+      {
+        "command": "imlec-typer.preset.matrix",
+        "title": "Matrix",
+        "category": "imlec-typer: Preset"
+      },
+      {
+        "command": "imlec-typer.preset.fireworks",
+        "title": "Fireworks",
+        "category": "imlec-typer: Preset"
+      },
+      {
+        "command": "imlec-typer.preset.typewriter",
+        "title": "Typewriter",
+        "category": "imlec-typer: Preset"
+      },
+      {
+        "command": "imlec-typer.preset.rainbow",
+        "title": "Rainbow Code",
+        "category": "imlec-typer: Preset"
+      },
+      {
+        "command": "imlec-typer.preset.minimal",
+        "title": "Minimal",
+        "category": "imlec-typer: Preset"
+      },
+      {
+        "command": "imlec-typer.checkUpdate",
+        "title": "Check for Updates",
+        "category": "imlec-typer"
+      }
+    ],
+    "menus": {
+      "commandPalette": [
+        { "command": "imlec-typer.toggle", "when": "true" },
+        { "command": "imlec-typer.settings", "when": "true" },
+        { "command": "imlec-typer.checkUpdate", "when": "true" }
+      ],
+      "editor/context": [
+        {
+          "submenu": "imlec-typer.presets",
+          "group": "9_cutcopypaste@5"
+        }
+      ],
+      "imlec-typer.presets": [
+        { "command": "imlec-typer.preset.matrix" },
+        { "command": "imlec-typer.preset.fireworks" },
+        { "command": "imlec-typer.preset.typewriter" },
+        { "command": "imlec-typer.preset.rainbow" },
+        { "command": "imlec-typer.preset.minimal" }
+      ]
+    },
+    "submenus": [
+      {
+        "id": "imlec-typer.presets",
+        "label": "imlec-typer Preset"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "imlec-typer.toggle",
+        "key": "ctrl+shift+i",
+        "mac": "cmd+shift+i",
+        "when": "editorTextFocus"
+      }
     ]
   },
   "scripts": {
     "vscode:prepublish": "npm run compile",
     "compile": "tsc -p ./",
-    "watch": "tsc -watch -p ./"
+    "watch": "tsc -watch -p ./",
+    "package": "vsce package --no-dependencies",
+    "publish": "vsce publish"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
-    "@types/vscode": "^1.74.0",
+    "@types/vscode": "^1.80.0",
+    "@vscode/vsce": "^3.0.0",
     "typescript": "^5.0.0"
   }
 }
