@@ -38,7 +38,8 @@ if ($asset) {
     Warn "a Unix 'link' (Git Bash, MSYS, Cygwin) shadows MSVC's link.exe on PATH"
 
     # Detect if GNU link (Git Bash / MSYS / Cygwin) shadows MSVC link.exe
-    $linkPath = (Get-Command link.exe -ErrorAction SilentlyContinue)?.Source
+    $linkCmd = Get-Command link.exe -ErrorAction SilentlyContinue
+    $linkPath = if ($linkCmd) { $linkCmd.Source } else { $null }
     if ($linkPath -and $linkPath -match 'Git|msys|mingw|cygwin') {
         Warn "GNU link found at $linkPath — this shadows MSVC link.exe"
         Warn "Build will likely fail. Options:"
