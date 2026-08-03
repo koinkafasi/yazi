@@ -26,6 +26,8 @@ if ($asset) {
     Invoke-WebRequest $asset.browser_download_url -OutFile $zip
     Expand-Archive -Path $zip -DestinationPath $Target -Force
     Remove-Item $zip -Force
+    # Downloaded archives carry a Mark-of-the-Web that Expand-Archive copies onto
+    # every extracted file; clearing it avoids a needless SmartScreen prompt.
     Get-ChildItem $Target -Recurse -File | Unblock-File -ErrorAction SilentlyContinue
 } else {
     if (-not (Get-Command cargo -ErrorAction SilentlyContinue)) {
@@ -34,6 +36,17 @@ if ($asset) {
     Warn "no prebuilt release found, building from source"
     Warn "a source build needs the MSVC toolchain AND the Windows SDK; it also fails if"
     Warn "a Unix 'link' (Git Bash, MSYS, Cygwin) shadows MSVC's link.exe on PATH"
+
+    # Detect if GNU link (Git Bash / MSYS / Cygwin) shadows MSVC link.exe
+    $linkPath = (Get-Command link.exe -ErrorAction SilentlyContinue)?.Source
+    if ($linkPath -and $linkPath -match 'Git|msys|mingw|cygwin') {
+        Warn "GNU link found at $linkPath — this shadows MSVC link.exe"
+        Warn "Build will likely fail. Options:"
+        Write-Host "    1) Remove Git Bash / MSYS from PATH temporarily"
+        Write-Host "    2) Build on Linux instead (Arch): cargo build --release --bin imlec-typer"
+        Write-Host "    3) Wait for a prebuilt release (.exe)"
+    }
+
     $src = Join-Path $env:TEMP ("imlec-typer-src-" + [Guid]::NewGuid().ToString().Substring(0, 8))
     if (Test-Path $src) {
         try { Remove-Item $src -Recurse -Force -ErrorAction Stop } catch {
@@ -44,7 +57,10 @@ if ($asset) {
     git clone --depth 1 "https://github.com/$Repo.git" $src
     Push-Location $src
     try {
-        cargo build --release --bin imlec-typer
+        cargo build --release --bin imlec-typer 2>&1
+        if ($LASTEXITCODE -ne 0) {
+            throw "cargo build failed. See above for the error. If link.exe failed with 'extra operand', remove Git Bash/MSYS from PATH and retry."
+        }
         Copy-Item 'target/release/imlec-typer.exe' $Target -Force
         Copy-Item 'config/default.toml' $Target -Force
     } finally {
@@ -55,6 +71,7 @@ if ($asset) {
 $exe = Join-Path $Target 'imlec-typer.exe'
 if (-not (Test-Path $exe)) { throw "imlec-typer.exe was not produced at $exe" }
 
+# Autostart via a Startup folder shortcut. Reversible: delete the .lnk.
 $shortcut = Join-Path $Startup 'imlec-typer.lnk'
 $shell = New-Object -ComObject WScript.Shell
 $link = $shell.CreateShortcut($shortcut)
