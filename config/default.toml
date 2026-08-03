@@ -7,48 +7,89 @@
 [general]
 enabled = true
 fps = 60
+
+# Hard ceiling on live particles. Lower it on weak hardware.
 max_particles = 600
+
+# Reference cursor height in pixels. Particle size = cursor_height_px * size_ratio,
+# so the default 20 * 0.5 gives particles half the height of the caret.
 cursor_height_px = 20.0
+
+# Nudge the spawn point away from the pointer hotspot.
 offset_x = 0.0
 offset_y = 0.0
+
+# Fast consecutive keystrokes ramp the particle count up, power-mode style.
 combo_enabled = true
 combo_window_ms = 600
 combo_max_multiplier = 2.5
+
+# Keys firing faster than this emit nothing. Guards against held-key repeat floods.
 min_emit_interval_ms = 16
+
+# Fallback content mode for the system-wide overlay (Rust binary).
+# The overlay cannot know the typed character, so it uses this mode.
+# Options: shape | random_digit | random_letter | random_symbol | emoji
 fallback_content = "shape"
 
+
+# --- Typing: letters, digits, space, enter, arrows ---------------------------
 [typing]
 enabled = true
 count = 6
+
+# circle | square | triangle | diamond | star | spark | hexagon
 shape = "circle"
+
 size_ratio = 0.5
 size_jitter = 0.4
+
 lifetime_ms = 500
 lifetime_jitter = 0.3
+
 speed = 130.0
 speed_jitter = 0.6
+
+# Emission cone. 0 = right, -90 = up, 90 = down. spread_deg 360 = all directions.
 direction_deg = -90.0
 spread_deg = 140.0
+
+# Downward acceleration px/s^2. Negative floats particles upward.
 gravity = 320.0
 drag = 1.8
 rotation_speed = 3.0
 shrink = true
 
 [typing.content]
+# What content spawns when typing.
+# glyph          -> the actual character typed (editor-only)
+# random_digit   -> random 0-9
+# random_letter  -> random a-zA-Z
+# random_symbol  -> random from symbol_set
+# emoji          -> random from emoji_set
+# shape          -> geometric shape (original imlec behaviour)
 mode = "shape"
+
 emoji_set = ["🔥", "💥", "✨", "⚡", "🎯", "💻", "🚀", "⭐"]
 symbol_set = ["{", "}", ";", "/", "<", ">", "=", "+", "-", "*", "&", "|", "!", "?"]
 
 [typing.effects]
-glow = true
-explode = true
-trail = false
-rotate_3d = false
+# Visual effects (editor-only, CSS-based)
+glow = true            # text-shadow glow
+explode = true         # outward burst on keypress
+trail = false          # leave a fading trail
+rotate_3d = false      # CSS 3D rotateX/Y
 
 [typing.color]
+# mode = "fixed"    -> color   = "#ff2d95"
+# mode = "palette"  -> colors  = ["#ff2d95", "#2de2e6"]
+# mode = "gradient" -> from/to = "#ff2d95" / "#2de2e6"
+# mode = "rainbow"  -> speed, saturation, value
 mode = "palette"
 colors = ["#ff2d95", "#ff9f1c", "#2de2e6", "#a06cff", "#f9f871"]
 
+
+# --- Deleting: backspace, delete ---------------------------------------------
 [deleting]
 enabled = true
 count = 8
@@ -79,6 +120,11 @@ rotate_3d = false
 [deleting.color]
 mode = "fixed"
 color = "#ff3b30"
+
+
+# ────────────────────────────────────────────
+# Presets — switch via tray menu or command
+# ────────────────────────────────────────────
 
 [preset.matrix]
 name = "Matrix"
