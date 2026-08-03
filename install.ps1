@@ -32,9 +32,15 @@ if ($asset) {
         throw "No release binary found and cargo is not installed. Install Rust from https://rustup.rs and rerun."
     }
     Warn "no prebuilt release found, building from source"
-    Warn "a source build needs the MSVC toolchain AND the Windows SDK"
-    $src = Join-Path $env:TEMP 'imlec-typer-src'
-    if (Test-Path $src) { Remove-Item $src -Recurse -Force }
+    Warn "a source build needs the MSVC toolchain AND the Windows SDK; it also fails if"
+    Warn "a Unix 'link' (Git Bash, MSYS, Cygwin) shadows MSVC's link.exe on PATH"
+    $src = Join-Path $env:TEMP ("imlec-typer-src-" + [Guid]::NewGuid().ToString().Substring(0, 8))
+    if (Test-Path $src) {
+        try { Remove-Item $src -Recurse -Force -ErrorAction Stop } catch {
+            Warn "could not remove old temp directory, using a new one"
+            $src = Join-Path $env:TEMP ("imlec-typer-src-" + [Guid]::NewGuid().ToString().Substring(0, 8))
+        }
+    }
     git clone --depth 1 "https://github.com/$Repo.git" $src
     Push-Location $src
     try {
@@ -49,7 +55,6 @@ if ($asset) {
 $exe = Join-Path $Target 'imlec-typer.exe'
 if (-not (Test-Path $exe)) { throw "imlec-typer.exe was not produced at $exe" }
 
-# Autostart via Startup folder shortcut
 $shortcut = Join-Path $Startup 'imlec-typer.lnk'
 $shell = New-Object -ComObject WScript.Shell
 $link = $shell.CreateShortcut($shortcut)
