@@ -1,5 +1,5 @@
 [package]
-name = "imlec"
+name = "imlec-typer"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -7,7 +7,7 @@ description = "Cross-platform particle effects that follow your cursor while you
 repository.workspace = true
 
 [[bin]]
-name = "imlec"
+name = "imlec-typer"
 path = "src/main.rs"
 
 [dependencies]
