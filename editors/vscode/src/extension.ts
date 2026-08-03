@@ -3,25 +3,27 @@ import { PRESETS, getPreset } from './presets';
 
 let enabled = true;
 let currentPreset = 'typewriter';
-let panel: vscode.WebviewPanel | undefined;
+let settingsPanel: vscode.WebviewPanel | undefined;
 let statusBarItem: vscode.StatusBarItem;
 let lastCheck = 0;
 
 const REPO = 'koinkafasi/yazi';
 const EXT_VERSION = '0.1.0';
 
+/* ── Types ─────────────────────────────────────────────── */
+
 export interface ParticleConfig {
     contentMode: string;
     color: string | string[] | 'rainbow';
     count: number;
-    gravity: number;
-    speed: number;
-    spreadDeg: number;
+    gravity: number;       // kept for settings compat, not used in decoration mode
+    speed: number;         // kept for settings compat
+    spreadDeg: number;     // kept for settings compat
     lifetimeMs: number;
     glow: boolean;
-    explode: boolean;
-    trail: boolean;
-    rotate3d: boolean;
+    explode: boolean;      // if true → more particles
+    trail: boolean;        // kept for settings compat
+    rotate3d: boolean;     // kept for settings compat
     emojiSet: string[];
     symbolSet: string[];
     size: number;
@@ -29,12 +31,20 @@ export interface ParticleConfig {
     comboMaxMultiplier: number;
 }
 
-function loadConfigFromSettings(): ParticleConfig {
+interface ActiveDecoration {
+    editor: vscode.TextEditor;
+    decoration: vscode.TextEditorDecorationType;
+    timeout: NodeJS.Timeout;
+}
+
+/* ── Config ────────────────────────────────────────────── */
+
+function loadConfig(): ParticleConfig {
     const cfg = vscode.workspace.getConfiguration('imlec-typer');
     const presetName = cfg.get<string>('preset', 'typewriter');
     const preset = getPreset(presetName);
 
-    const colorMode = cfg.get<string>('colorMode', preset?.contentMode || 'palette');
+    const colorMode = cfg.get<string>('colorMode', 'palette');
     let color: string | string[] | 'rainbow' = '#ff2d95';
     if (colorMode === 'fixed') {
         color = cfg.get<string>('colorFixed', '#ff2d95');
@@ -66,6 +76,8 @@ function loadConfigFromSettings(): ParticleConfig {
     };
 }
 
+/* ── Content generators ────────────────────────────────── */
+
 function getContent(config: ParticleConfig, typedChar: string): string {
     switch (config.contentMode) {
         case 'glyph': return typedChar;
@@ -90,24 +102,119 @@ function getContent(config: ParticleConfig, typedChar: string): string {
     }
 }
 
+function pickColor(config: ParticleConfig): string {
+    if (config.color === 'rainbow') {
+        return `hsl(${Math.floor(Math.random() * 360)}, 85%, 60%)`;
+    }
+    if (Array.isArray(config.color)) {
+        if (config.color.length === 2) {
+            const t = Math.random();
+            return interpolateColor(config.color[0], config.color[1], t);
+        }
+        return config.color[Math.floor(Math.random() * config.color.length)];
+    }
+    return config.color;
+}
+
+function interpolateColor(a: string, b: string, t: number): string {
+    const hex = (s: string) => parseInt(s.slice(1), 16);
+    const r1 = (hex(a) >> 16) & 0xff, g1 = (hex(a) >> 8) & 0xff, b1 = hex(a) & 0xff;
+    const r2 = (hex(b) >> 16) & 0xff, g2 = (hex(b) >> 8) & 0xff, b2 = hex(b) & 0xff;
+    const f = (v1: number, v2: number) => Math.round(v1 + t * (v2 - v1));
+    const toHex = (v: number) => v.toString(16).padStart(2, '0');
+    return `#${toHex(f(r1, r2))}${toHex(f(g1, g2))}${toHex(f(b1, b2))}`;
+}
+
+/* ── Combo tracking ────────────────────────────────────── */
+
+const comboWindow = 500; // ms
+let lastKeystroke = 0;
+let comboStreak = 0;
+
+function getComboMultiplier(config: ParticleConfig): number {
+    if (!config.comboEnabled) { return 1; }
+    const now = Date.now();
+    if (now - lastKeystroke < comboWindow) {
+        comboStreak++;
+    } else {
+        comboStreak = 1;
+    }
+    lastKeystroke = now;
+    const mul = Math.min(config.comboMaxMultiplier, 1 + (comboStreak / 10));
+    return mul;
+}
+
+/* ── Decoration engine ─────────────────────────────────── */
+
+const activeDecorations: ActiveDecoration[] = [];
+
+function spawnDecorations(editor: vscode.TextEditor, position: vscode.Position, char: string, config: ParticleConfig) {
+    const comboMul = getComboMultiplier(config);
+    const count = Math.max(1, Math.floor(config.count * (config.explode ? comboMul : 1)));
+
+    for (let i = 0; i < count; i++) {
+        const content = getContent(config, char);
+        const color = pickColor(config);
+        const glow = config.glow;
+
+        const dt = vscode.window.createTextEditorDecorationType({
+            after: {
+                contentText: content,
+                color: color,
+                fontWeight: 'bold',
+                textDecoration: glow
+                    ? `none; text-shadow: 0 0 6px ${color}, 0 0 12px ${color};`
+                    : 'none;',
+                margin: '0 0 0 2px',
+            },
+            rangeBehavior: vscode.DecorationRangeBehavior.ClosedOpen,
+        });
+
+        const range = new vscode.Range(position, position);
+        editor.setDecorations(dt, [range]);
+
+        const timeout = setTimeout(() => {
+            dt.dispose();
+            const idx = activeDecorations.findIndex(d => d.decoration === dt);
+            if (idx !== -1) { activeDecorations.splice(idx, 1); }
+        }, config.lifetimeMs);
+
+        activeDecorations.push({ editor, decoration: dt, timeout });
+    }
+}
+
+function clearAllDecorations() {
+    for (const ad of activeDecorations) {
+        clearTimeout(ad.timeout);
+        ad.decoration.dispose();
+    }
+    activeDecorations.length = 0;
+}
+
+/* ── Status bar ────────────────────────────────────────── */
+
 function updateStatusBar() {
-    if (!statusBarItem) return;
-    statusBarItem.text = enabled ? `$(play) imlec: ${currentPreset}` : `$(debug-pause) imlec: off`;
+    if (!statusBarItem) { return; }
+    statusBarItem.text = enabled
+        ? `$(play) imlec: ${currentPreset}`
+        : `$(debug-pause) imlec: off`;
     statusBarItem.tooltip = enabled
         ? `imlec-typer active — preset: ${currentPreset}\nClick to toggle`
         : 'imlec-typer paused — Click to enable';
 }
 
+/* ── Update check ──────────────────────────────────────── */
+
 async function checkForUpdates(silent = true) {
     const now = Date.now();
-    if (now - lastCheck < 24 * 60 * 60 * 1000) return;
+    if (now - lastCheck < 24 * 60 * 60 * 1000) { return; }
     lastCheck = now;
 
     try {
         const resp = await fetch(`https://api.github.com/repos/${REPO}/releases/latest`);
-        const data = await resp.json();
+        const data = await resp.json() as any;
         const latest = (data.tag_name || '').replace(/^v/, '');
-        if (!latest) return;
+        if (!latest) { return; }
 
         if (isNewer(latest, EXT_VERSION)) {
             const action = await vscode.window.showInformationMessage(
@@ -128,31 +235,33 @@ async function checkForUpdates(silent = true) {
 }
 
 function isNewer(a: string, b: string): boolean {
-    const pa = a.split(/[.-]/).map(x => parseInt(x) || 0);
-    const pb = b.split(/[.-]/).map(x => parseInt(x) || 0);
+    const pa = a.split(/[.-]/).map(x => parseInt(x, 10) || 0);
+    const pb = b.split(/[.-]/).map(x => parseInt(x, 10) || 0);
     for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
         const diff = (pa[i] || 0) - (pb[i] || 0);
-        if (diff !== 0) return diff > 0;
+        if (diff !== 0) { return diff > 0; }
     }
     return false;
 }
 
+/* ── Settings panel ────────────────────────────────────── */
+
 function openSettingsPanel(context: vscode.ExtensionContext) {
-    if (panel) {
-        panel.reveal(vscode.ViewColumn.Beside);
+    if (settingsPanel) {
+        settingsPanel.reveal(vscode.ViewColumn.Beside);
         return;
     }
 
-    panel = vscode.window.createWebviewPanel(
+    settingsPanel = vscode.window.createWebviewPanel(
         'imlecSettings',
         'imlec-typer Settings',
         { viewColumn: vscode.ViewColumn.Beside, preserveFocus: true },
         { enableScripts: true, retainContextWhenHidden: true }
     );
 
-    panel.webview.html = getSettingsHtml();
+    settingsPanel.webview.html = getSettingsHtml();
 
-    panel.webview.onDidReceiveMessage(async (msg) => {
+    settingsPanel.webview.onDidReceiveMessage(async (msg) => {
         const cfg = vscode.workspace.getConfiguration('imlec-typer');
         switch (msg.type) {
             case 'setPreset':
@@ -207,39 +316,37 @@ function openSettingsPanel(context: vscode.ExtensionContext) {
         }
     });
 
-    panel.onDidDispose(() => { panel = undefined; });
+    settingsPanel.onDidDispose(() => { settingsPanel = undefined; });
 }
 
+/* ── Activation ────────────────────────────────────────── */
+
 export function activate(context: vscode.ExtensionContext): void {
+    // Status bar
     statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
     statusBarItem.command = 'imlec-typer.toggle';
     updateStatusBar();
     statusBarItem.show();
     context.subscriptions.push(statusBarItem);
 
+    // Load initial config
     const cfg = vscode.workspace.getConfiguration('imlec-typer');
     enabled = cfg.get<boolean>('enabled', true);
     currentPreset = cfg.get<string>('preset', 'typewriter');
     updateStatusBar();
 
+    // Check for updates on startup
     if (cfg.get<boolean>('checkUpdates', true)) {
         checkForUpdates(true);
     }
 
-    const overlay = vscode.window.createWebviewPanel(
-        'imlecOverlay',
-        'imlec-typer',
-        { viewColumn: vscode.ViewColumn.One, preserveFocus: true },
-        { enableScripts: true, retainContextWhenHidden: true, localResourceRoots: [context.extensionUri] }
-    );
-    overlay.webview.html = getOverlayHtml();
-    overlay.onDidDispose(() => {});
-
+    // Commands
     context.subscriptions.push(
         vscode.commands.registerCommand('imlec-typer.toggle', () => {
             enabled = !enabled;
             vscode.workspace.getConfiguration('imlec-typer').update('enabled', enabled, true);
             updateStatusBar();
+            if (!enabled) { clearAllDecorations(); }
             vscode.window.showInformationMessage(`imlec-typer ${enabled ? 'enabled' : 'disabled'}`);
         }),
         vscode.commands.registerCommand('imlec-typer.settings', () => {
@@ -250,6 +357,7 @@ export function activate(context: vscode.ExtensionContext): void {
         })
     );
 
+    // Preset commands
     for (const key of Object.keys(PRESETS)) {
         context.subscriptions.push(
             vscode.commands.registerCommand(`imlec-typer.preset.${key}`, () => {
@@ -264,29 +372,27 @@ export function activate(context: vscode.ExtensionContext): void {
         );
     }
 
+    // ── Real keystroke tracking via document change ───────
     context.subscriptions.push(
-        vscode.window.onDidChangeTextEditorSelection((event) => {
-            if (!enabled || !overlay || !event.textEditor) return;
-            if (event.kind !== vscode.TextEditorSelectionChangeKind.Keyboard) return;
+        vscode.workspace.onDidChangeTextDocument((event) => {
+            if (!enabled) { return; }
 
-            const editor = event.textEditor;
-            const document = editor.document;
-            const selection = editor.selection;
-            const pos = selection.active;
-            const line = document.lineAt(pos.line);
-            const char = pos.character > 0 && pos.character <= line.text.length
-                ? line.text[pos.character - 1] || ' '
-                : ' ';
+            const editor = vscode.window.activeTextEditor;
+            if (!editor || editor.document !== event.document) { return; }
 
-            const config = loadConfigFromSettings();
-            overlay.webview.postMessage({
-                type: 'spawn',
-                char: getContent(config, char),
-                config,
-            });
+            const config = loadConfig();
+
+            for (const change of event.contentChanges) {
+                // Only single-character insertions (keystrokes, not paste/multi-char)
+                if (change.text.length !== 1) { continue; }
+
+                const pos = editor.document.positionAt(change.rangeOffset);
+                spawnDecorations(editor, pos, change.text, config);
+            }
         })
     );
 
+    // Config change listener
     context.subscriptions.push(
         vscode.workspace.onDidChangeConfiguration((e) => {
             if (e.affectsConfiguration('imlec-typer')) {
@@ -300,68 +406,11 @@ export function activate(context: vscode.ExtensionContext): void {
 }
 
 export function deactivate(): void {
-    if (panel) panel.dispose();
+    if (settingsPanel) { settingsPanel.dispose(); }
+    clearAllDecorations();
 }
 
-function getOverlayHtml(): string {
-    return `<!DOCTYPE html>
-<html><head><meta charset="UTF-8">
-<style>
-body{margin:0;padding:0;overflow:hidden;background:transparent}
-#p{position:fixed;top:0;left:0;width:100%;height:100%;pointer-events:none}
-.imlec{position:fixed;pointer-events:none;z-index:999999;font-family:'JetBrains Mono','Fira Code','Cascadia Code',monospace;font-weight:bold;white-space:pre;will-change:transform,opacity}
-.imlec.glow{text-shadow:0 0 6px currentColor,0 0 12px currentColor}
-.imlec.trail{filter:blur(0.5px)}
-</style>
-</head><body><div id="p"></div>
-<script>
-const pts=[];let af=null;
-window.addEventListener('message',e=>{const m=e.data;if(m.type==='spawn')spawn(m.char,m.config)});
-function spawn(text,cfg){
-    const el=document.createElement('span');
-    el.className='imlec'+(cfg.glow?' glow':'')+(cfg.trail?' trail':'');
-    el.textContent=text;
-    const vw=window.innerWidth,vh=window.innerHeight;
-    const x=vw*0.3+Math.random()*vw*0.4,y=vh*0.2+Math.random()*vh*0.4;
-    el.style.left=x+'px';el.style.top=y+'px';
-    let col;
-    if(Array.isArray(cfg.color))col=cfg.color[Math.floor(Math.random()*cfg.color.length)];
-    else if(cfg.color==='rainbow')col='hsl('+Math.random()*360+',80%,60%)';
-    else if(Array.isArray(cfg.color)&&cfg.color.length===2){
-        const t=Math.random();col=interp(cfg.color[0],cfg.color[1],t);
-    }else col=cfg.color;
-    el.style.color=col;el.style.fontSize=cfg.size+'px';
-    if(cfg.rotate3d)el.style.transform='perspective(200px) rotateX('+(Math.random()*40-20)+'deg) rotateY('+(Math.random()*40-20)+'deg)';
-    document.getElementById('p').appendChild(el);
-    const dir=(-90+(Math.random()-0.5)*cfg.spreadDeg)*Math.PI/180;
-    const spd=cfg.speed*(0.7+Math.random()*0.6);
-    pts.push({el,x,y,vx:Math.cos(dir)*spd,vy:Math.sin(dir)*spd,life:cfg.lifetimeMs,maxLife:cfg.lifetimeMs,gravity:cfg.gravity,rotate3d:cfg.rotate3d});
-    if(!af)af=requestAnimationFrame(upd);
-}
-function interp(a,b,t){
-    const h=i=>[parseInt(i.slice(1,3),16),parseInt(i.slice(3,5),16),parseInt(i.slice(5,7),16)];
-    const [r1,g1,b1]=h(a),[r2,g2,b2]=h(b);
-    const f=v=>Math.round(v1+t*(v2-v1)).toString(16).padStart(2,'0');
-    return '#'+f(r1)+f(g1)+f(b1);
-}
-function upd(){
-    const dt=16,dtS=dt/1000,c=document.getElementById('p');
-    for(let i=pts.length-1;i>=0;i--){
-        const p=pts[i];p.life-=dt;
-        if(p.life<=0){c.removeChild(p.el);pts.splice(i,1);continue;}
-        const drag=0.02;p.vx*=1-drag;p.vy=p.vy*(1-drag)+p.gravity*dtS;
-        p.x+=p.vx*dtS;p.y+=p.vy*dtS;
-        const t=p.life/p.maxLife;
-        p.el.style.left=p.x+'px';p.el.style.top=p.y+'px';
-        p.el.style.opacity=t;
-        const s=Math.max(0.1,t);
-        if(p.rotate3d)p.el.style.transform='perspective(200px) rotateX('+(Math.random()*10-5)+'deg) rotateY('+(Math.random()*10-5)+'deg) scale('+s+')';
-        else p.el.style.transform='scale('+s+')';
-    }
-    pts.length>0?(af=requestAnimationFrame(upd)):(af=null);
-}
-</script></body></html>`;
-}
+/* ── Settings Panel HTML ───────────────────────────────── */
 
 function getSettingsHtml(): string {
     return `<!DOCTYPE html>
@@ -375,7 +424,7 @@ h2{margin-top:0;color:var(--vscode-textLink-foreground)}
 .row{display:flex;align-items:center;gap:12px;margin:8px 0}
 .row label{min-width:140px;font-size:13px}
 .row input[type="range"]{flex:1}
-.row select,.row input[type="number"]{background:var(--vscode-input-background);color:var(--vscode-input-foreground);border:1px solid var(--vscode-input-border);border-radius:4px;padding:4px 8px}
+.row select, .row input[type="color"], .row input[type="number"]{background:var(--vscode-input-background);color:var(--vscode-input-foreground);border:1px solid var(--vscode-input-border);border-radius:4px;padding:4px 8px}
 .row input[type="checkbox"]{width:18px;height:18px}
 .val{min-width:40px;text-align:right;font-size:12px;font-family:monospace}
 button{background:var(--vscode-button-background);color:var(--vscode-button-foreground);border:none;border-radius:4px;padding:8px 16px;cursor:pointer;font-size:13px}
@@ -387,49 +436,58 @@ button:hover{background:var(--vscode-button-hoverBackground)}
 </style>
 </head><body>
 <h2>⚡ imlec-typer Settings</h2>
+
 <div class="group">
 <h3>🎯 Preset</h3>
 <div class="preset-grid">
-${Object.entries(PRESETS).map(([k,v])=>`<button class="preset-btn" data-preset="${k}" onclick="setPreset('${k}')">${v.name}</button>`).join('')}
+${Object.entries(PRESETS).map(([k, v]) => `<button class="preset-btn" data-preset="${k}" onclick="setPreset('${k}')">${v.name}</button>`).join('')}
 </div>
 </div>
+
 <div class="group">
 <h3>🎨 Content & Color</h3>
 <div class="row"><label>Content Mode</label><select id="contentMode" onchange="send('setContentMode',this.value)">
-<option value="glyph">Glyph (typed char)</option><option value="random_digit">Random Digit</option>
-<option value="random_letter">Random Letter</option><option value="random_symbol">Random Symbol</option>
-<option value="emoji">Emoji</option><option value="shape">Shape</option>
+<option value="glyph">Glyph (typed char)</option>
+<option value="random_digit">Random Digit</option>
+<option value="random_letter">Random Letter</option>
+<option value="random_symbol">Random Symbol</option>
+<option value="emoji">Emoji</option>
+<option value="shape">Shape</option>
 </select></div>
 <div class="row"><label>Color Mode</label><select id="colorMode" onchange="send('setColorMode',this.value)">
-<option value="fixed">Fixed</option><option value="palette">Palette</option>
-<option value="gradient">Gradient</option><option value="rainbow">Rainbow</option>
+<option value="fixed">Fixed</option>
+<option value="palette">Palette</option>
+<option value="gradient">Gradient</option>
+<option value="rainbow">Rainbow</option>
 </select></div>
 </div>
+
 <div class="group">
 <h3>⚙️ Physics</h3>
-<div class="row"><label>Count</label><input type="range" min="1" max="50" oninput="setNum('setCount',this.value)"><span class="val">6</span></div>
-<div class="row"><label>Size (px)</label><input type="range" min="8" max="48" oninput="setNum('setSize',this.value)"><span class="val">14</span></div>
-<div class="row"><label>Gravity</label><input type="range" min="-1000" max="1000" oninput="setNum('setGravity',this.value)"><span class="val">320</span></div>
-<div class="row"><label>Speed</label><input type="range" min="0" max="1000" oninput="setNum('setSpeed',this.value)"><span class="val">130</span></div>
-<div class="row"><label>Spread °</label><input type="range" min="0" max="360" oninput="setNum('setSpread',this.value)"><span class="val">140</span></div>
-<div class="row"><label>Lifetime ms</label><input type="range" min="100" max="3000" oninput="setNum('setLifetime',this.value)"><span class="val">500</span></div>
+<div class="row"><label>Count</label><input type="range" id="count" min="1" max="50" oninput="setNum('setCount',this.value)"><span class="val" id="v-count">6</span></div>
+<div class="row"><label>Size (px)</label><input type="range" id="size" min="8" max="48" oninput="setNum('setSize',this.value)"><span class="val" id="v-size">14</span></div>
+<div class="row"><label>Lifetime ms</label><input type="range" id="lifetime" min="100" max="3000" oninput="setNum('setLifetime',this.value)"><span class="val" id="v-lifetime">500</span></div>
 </div>
+
 <div class="group">
 <h3>✨ Effects</h3>
-<div class="row"><label>Glow</label><input type="checkbox" onchange="send('setGlow',this.checked)"></div>
-<div class="row"><label>Explode</label><input type="checkbox" onchange="send('setExplode',this.checked)"></div>
-<div class="row"><label>Trail</label><input type="checkbox" onchange="send('setTrail',this.checked)"></div>
-<div class="row"><label>3D Rotate</label><input type="checkbox" onchange="send('setRotate3d',this.checked)"></div>
-<div class="row"><label>Combo Mode</label><input type="checkbox" onchange="send('setCombo',this.checked)"></div>
+<div class="row"><label>Glow</label><input type="checkbox" id="glow" onchange="send('setGlow',this.checked)"></div>
+<div class="row"><label>Explode</label><input type="checkbox" id="explode" onchange="send('setExplode',this.checked)"></div>
+<div class="row"><label>Combo Mode</label><input type="checkbox" id="combo" onchange="send('setCombo',this.checked)"></div>
 </div>
+
 <div style="text-align:center;margin-top:20px">
 <button onclick="send('toggle')">Toggle On/Off</button>
 </div>
+
 <script>
 const vscode=acquireVsCodeApi();
 function send(cmd,val){vscode.postMessage({type:cmd,value:val})}
-function setNum(cmd,val){send(cmd,parseInt(val))}
-function setPreset(name){document.querySelectorAll('.preset-btn').forEach(b=>b.classList.toggle('active',b.dataset.preset===name));send('setPreset',name)}
+function setNum(cmd,val){send(cmd,parseInt(val));document.getElementById('v-'+cmd.replace(/set/,'').toLowerCase()).textContent=val}
+function setPreset(name){
+    document.querySelectorAll('.preset-btn').forEach(b=>b.classList.toggle('active',b.dataset.preset===name));
+    send('setPreset',name);
+}
 </script>
 </body></html>`;
 }
