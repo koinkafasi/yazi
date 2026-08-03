@@ -47,14 +47,17 @@ if ($asset) {
         Write-Host "    3) Wait for a prebuilt release (.exe)"
     }
 
-    $src = Join-Path $env:TEMP ("imlec-typer-src-" + [Guid]::NewGuid().ToString().Substring(0, 8))
-    if (Test-Path $src) {
-        try { Remove-Item $src -Recurse -Force -ErrorAction Stop } catch {
-            Warn "could not remove old temp directory, using a new one"
-            $src = Join-Path $env:TEMP ("imlec-typer-src-" + [Guid]::NewGuid().ToString().Substring(0, 8))
-        }
-    }
-    git clone --depth 1 "https://github.com/$Repo.git" $src
+    # Download source zip (no git required)
+    $srcRoot = Join-Path $env:TEMP ("imlec-typer-src-" + [Guid]::NewGuid().ToString().Substring(0, 8))
+    New-Item -ItemType Directory -Force -Path $srcRoot | Out-Null
+
+    $zip = Join-Path $env:TEMP 'imlec-typer-main.zip'
+    Info "downloading source archive"
+    Invoke-WebRequest "https://github.com/$Repo/archive/refs/heads/main.zip" -OutFile $zip
+    Expand-Archive -Path $zip -DestinationPath $srcRoot -Force
+    Remove-Item $zip -Force
+
+    $src = Join-Path $srcRoot 'yazi-main'
     Push-Location $src
     try {
         cargo build --release --bin imlec-typer 2>&1
