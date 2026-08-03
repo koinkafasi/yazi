@@ -28,67 +28,92 @@ impl Verts {
 }
 
 impl Shape {
-    pub fn build(self, size: f32) -> Verts {
-        let mut verts = Verts {
-            points: [(0.0, 0.0); MAX_VERTS],
-            len: 0,
-        };
-        let r = size * 0.5;
-        let push = |v: &mut Verts, p: (f32, f32)| {
-            v.points[v.len] = p;
-            v.len += 1;
-        };
-        match self {
-            Shape::Circle => {
-                let n = 8;
-                for i in 0..n {
-                    let a = (i as f32 / n as f32) * std::f32::consts::TAU;
-                    push(&mut verts, (a.cos() * r, a.sin() * r));
-                }
-            }
-            Shape::Square => {
-                let s = r * 0.9;
-                push(&mut verts, (-s, -s));
-                push(&mut verts, (s, -s));
-                push(&mut verts, (s, s));
-                push(&mut verts, (-s, s));
-            }
-            Shape::Triangle => {
-                for i in 0..3 {
-                    let a = (i as f32 / 3.0) * std::f32::consts::TAU - std::f32::consts::FRAC_PI_2;
-                    push(&mut verts, (a.cos() * r, a.sin() * r));
-                }
-            }
-            Shape::Diamond => {
-                push(&mut verts, (0.0, -r));
-                push(&mut verts, (r, 0.0));
-                push(&mut verts, (0.0, r));
-                push(&mut verts, (-r, 0.0));
-            }
-            Shape::Star => {
-                let outer = r;
-                let inner = r * 0.4;
-                for i in 0..10 {
-                    let a = (i as f32 / 10.0) * std::f32::consts::TAU - std::f32::consts::FRAC_PI_2;
-                    let rad = if i % 2 == 0 { outer } else { inner };
-                    push(&mut verts, (a.cos() * rad, a.sin() * rad));
-                }
-            }
-            Shape::Spark => {
-                for _ in 0..4 {
-                    let a = fastrand::f32() * std::f32::consts::TAU;
-                    let len = r * (0.3 + fastrand::f32() * 0.7);
-                    push(&mut verts, (0.0, 0.0));
-                    push(&mut verts, (a.cos() * len, a.sin() * len));
-                }
-            }
-            Shape::Hexagon => {
-                for i in 0..6 {
-                    let a = (i as f32 / 6.0) * std::f32::consts::TAU;
-                    push(&mut verts, (a.cos() * r, a.sin() * r));
-                }
-            }
-        }
-        verts
+    pub fn is_circle(self) -> bool {
+        matches!(self, Shape::Circle)
     }
+
+    /// Polygon outline centred on (cx, cy). `size` is the full width/height.
+    /// Circle returns an inscribed 12-gon so backends without arc primitives still work.
+    pub fn vertices(self, cx: f32, cy: f32, size: f32, rotation: f32) -> Verts {
+        let r = size * 0.5;
+        let mut points = [(0.0f32, 0.0f32); MAX_VERTS];
+        let len = match self {
+            Shape::Circle => regular(
+                &mut points,
+                cx,
+                cy,
+                r,
+                12,
+                rotation,
+                -std::f32::consts::FRAC_PI_2,
+            ),
+            Shape::Square => regular(
+                &mut points,
+                cx,
+                cy,
+                r * std::f32::consts::SQRT_2,
+                4,
+                rotation,
+                std::f32::consts::FRAC_PI_4,
+            ),
+            Shape::Triangle => regular(
+                &mut points,
+                cx,
+                cy,
+                r,
+                3,
+                rotation,
+                -std::f32::consts::FRAC_PI_2,
+            ),
+            Shape::Diamond => regular(
+                &mut points,
+                cx,
+                cy,
+                r,
+                4,
+                rotation,
+                -std::f32::consts::FRAC_PI_2,
+            ),
+            Shape::Hexagon => regular(&mut points, cx, cy, r, 6, rotation, 0.0),
+            Shape::Star => star(&mut points, cx, cy, r, r * 0.42, 5, rotation),
+            Shape::Spark => star(&mut points, cx, cy, r, r * 0.18, 4, rotation),
+        };
+        Verts { points, len }
+    }
+}
+
+fn regular(
+    out: &mut [(f32, f32); MAX_VERTS],
+    cx: f32,
+    cy: f32,
+    r: f32,
+    n: usize,
+    rotation: f32,
+    offset: f32,
+) -> usize {
+    let step = std::f32::consts::TAU / n as f32;
+    for (i, point) in out.iter_mut().take(n).enumerate() {
+        let a = offset + rotation + step * i as f32;
+        *point = (cx + r * a.cos(), cy + r * a.sin());
+    }
+    n
+}
+
+fn star(
+    out: &mut [(f32, f32); MAX_VERTS],
+    cx: f32,
+    cy: f32,
+    outer: f32,
+    inner: f32,
+    spikes: usize,
+    rotation: f32,
+) -> usize {
+    let n = spikes * 2;
+    let step = std::f32::consts::TAU / n as f32;
+    for (i, point) in out.iter_mut().take(n).enumerate() {
+        let r = if i % 2 == 0 { outer } else { inner };
+        let a = -std::f32::consts::FRAC_PI_2 + rotation + step * i as f32;
+        *point = (cx + r * a.cos(), cy + r * a.sin());
+    }
+    n
 }

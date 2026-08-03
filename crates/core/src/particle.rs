@@ -17,7 +17,9 @@ pub struct Particle {
     pub color: Rgba,
     pub shape: Shape,
     pub rotation: f32,
+    /// Some('a') for text particles, None for shapes (overlay mode).
     pub content: Option<char>,
+    /// True if this particle renders as text (editor-only).
     pub is_text: bool,
     vx: f32,
     vy: f32,
@@ -45,6 +47,7 @@ impl Particle {
         self.rotation += self.rot_speed * dt;
 
         let t = self.age / self.life;
+        // Quadratic falloff reads as a snappier fade than linear at short lifetimes.
         self.color.a = self.base_alpha * (1.0 - t) * (1.0 - t);
         self.size = if self.shrink {
             self.base_size * (1.0 - t * 0.85)
@@ -99,10 +102,14 @@ impl ParticleSystem {
         self.combo
     }
 
+    /// Spawns a burst at the given screen position. Returns false if the burst was
+    /// suppressed (disabled, or key repeat firing faster than min_emit_interval_ms).
     pub fn emit(&mut self, kind: EmitKind, x: f32, y: f32) -> bool {
         self.emit_with_content(kind, x, y, None)
     }
 
+    /// Spawns particles with content awareness. `typed_char` is the actual
+    /// character typed (editor-provided). Pass `None` for system-wide overlay.
     pub fn emit_with_content(
         &mut self,
         kind: EmitKind,
@@ -153,6 +160,7 @@ impl ParticleSystem {
         for _ in 0..count {
             let p = spawn_content(emitter, ox, oy, base_size, elapsed, typed_char);
             if self.particles.len() >= max {
+                // Budget reached: overwrite the oldest particle rather than growing.
                 self.particles.remove(0);
             }
             self.particles.push(p);
@@ -301,6 +309,7 @@ mod tests {
         cfg.typing.content = ParticleContent::Glyph;
         let mut sys = ParticleSystem::new(cfg);
         sys.emit_with_content(EmitKind::Typing, 100.0, 100.0, Some('x'));
+
         let particles = sys.particles();
         assert!(!particles.is_empty());
         let p = &particles[0];
@@ -314,6 +323,7 @@ mod tests {
         cfg.typing.content = ParticleContent::RandomDigit;
         let mut sys = ParticleSystem::new(cfg);
         sys.emit_with_content(EmitKind::Typing, 100.0, 100.0, None);
+
         let particles = sys.particles();
         assert!(!particles.is_empty());
         let p = &particles[0];
@@ -327,6 +337,7 @@ mod tests {
         cfg.typing.content = ParticleContent::Shape(Shape::Circle);
         let mut sys = ParticleSystem::new(cfg);
         sys.emit_with_content(EmitKind::Typing, 100.0, 100.0, None);
+
         let particles = sys.particles();
         assert!(!particles.is_empty());
         let p = &particles[0];
