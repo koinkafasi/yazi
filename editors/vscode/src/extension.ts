@@ -16,23 +16,18 @@ export interface ParticleConfig {
     contentMode: string;
     color: string | string[] | 'rainbow';
     count: number;
-    gravity: number;       // kept for settings compat, not used in decoration mode
-    speed: number;         // kept for settings compat
-    spreadDeg: number;     // kept for settings compat
     lifetimeMs: number;
     glow: boolean;
-    explode: boolean;      // if true → more particles
-    trail: boolean;        // kept for settings compat
-    rotate3d: boolean;     // kept for settings compat
+    explode: boolean;
     emojiSet: string[];
     symbolSet: string[];
-    size: number;
     comboEnabled: boolean;
     comboMaxMultiplier: number;
 }
 
+type EventKind = 'insert' | 'delete' | 'tab' | 'enter' | 'space';
+
 interface ActiveDecoration {
-    editor: vscode.TextEditor;
     decoration: vscode.TextEditorDecorationType;
     timeout: NodeJS.Timeout;
 }
@@ -60,17 +55,11 @@ function loadConfig(): ParticleConfig {
         contentMode: cfg.get<string>('contentMode', preset?.contentMode || 'glyph'),
         color,
         count: cfg.get<number>('count', preset?.count || 6),
-        gravity: cfg.get<number>('gravity', preset?.gravity || 320),
-        speed: cfg.get<number>('speed', preset?.speed || 130),
-        spreadDeg: cfg.get<number>('spreadDeg', preset?.spreadDeg || 140),
         lifetimeMs: cfg.get<number>('lifetimeMs', preset?.lifetimeMs || 500),
         glow: cfg.get<boolean>('glow', preset?.glow ?? true),
         explode: cfg.get<boolean>('explode', preset?.explode ?? true),
-        trail: cfg.get<boolean>('trail', false),
-        rotate3d: cfg.get<boolean>('rotate3d', false),
         emojiSet: cfg.get<string[]>('emojiSet', ['🔥', '💥', '✨', '⚡', '🎯', '💻', '🚀', '⭐']),
         symbolSet: cfg.get<string[]>('symbolSet', ['{', '}', ';', '/', '<', '>', '=', '+', '-', '*', '&', '|', '!', '?']),
-        size: cfg.get<number>('size', 14),
         comboEnabled: cfg.get<boolean>('comboEnabled', true),
         comboMaxMultiplier: cfg.get<number>('comboMaxMultiplier', 2.5),
     };
@@ -127,7 +116,7 @@ function interpolateColor(a: string, b: string, t: number): string {
 
 /* ── Combo tracking ────────────────────────────────────── */
 
-const comboWindow = 500; // ms
+const comboWindow = 500;
 let lastKeystroke = 0;
 let comboStreak = 0;
 
@@ -140,46 +129,133 @@ function getComboMultiplier(config: ParticleConfig): number {
         comboStreak = 1;
     }
     lastKeystroke = now;
-    const mul = Math.min(config.comboMaxMultiplier, 1 + (comboStreak / 10));
-    return mul;
+    return Math.min(config.comboMaxMultiplier, 1 + (comboStreak / 10));
 }
 
 /* ── Decoration engine ─────────────────────────────────── */
 
 const activeDecorations: ActiveDecoration[] = [];
 
-function spawnDecorations(editor: vscode.TextEditor, position: vscode.Position, char: string, config: ParticleConfig) {
+function spawnBurst(
+    editor: vscode.TextEditor,
+    position: vscode.Position,
+    config: ParticleConfig,
+    kind: EventKind,
+    typedChar: string,
+) {
     const comboMul = getComboMultiplier(config);
-    const count = Math.max(1, Math.floor(config.count * (config.explode ? comboMul : 1)));
+    const baseCount = Math.max(2, Math.floor(config.count * (config.explode ? comboMul : 1)));
 
-    for (let i = 0; i < count; i++) {
-        const content = getContent(config, char);
-        const color = pickColor(config);
-        const glow = config.glow;
+    // Determine palette by event kind
+    let palette: string[];
+    let useGlyph: boolean;
+    switch (kind) {
+        case 'delete':
+            palette = ['#ff2d2d', '#ff6b6b', '#ff9f1c', '#ff4757'];
+            useGlyph = false;
+            break;
+        case 'tab':
+            palette = ['#2de2e6', '#00d2d3', '#48dbfb', '#0abde3'];
+            useGlyph = false;
+            break;
+        case 'enter':
+            palette = ['#00ff41', '#2ecc71', '#55efc4', '#26de81'];
+            useGlyph = false;
+            break;
+        case 'space':
+            palette = ['#a06cff', '#f368e0', '#ff9ff3', '#f9f871'];
+            useGlyph = false;
+            break;
+        default:
+            palette = Array.isArray(config.color) && config.color.length > 2
+                ? config.color
+                : (config.color === 'rainbow' ? [] : [config.color as string]);
+            useGlyph = true;
+            break;
+    }
 
+    const pick = (): string => {
+        if (palette.length === 0) { return `hsl(${Math.floor(Math.random() * 360)}, 85%, 60%)`; }
+        return palette[Math.floor(Math.random() * palette.length)];
+    };
+
+    const range = new vscode.Range(position, position);
+
+    // ── Background pulse on the typed character itself ──
+    if (kind === 'insert') {
+        const pulseColor = pick();
+        const bgDt = vscode.window.createTextEditorDecorationType({
+            backgroundColor: `${pulseColor}33`, // 20% opacity hex
+            borderRadius: '2px',
+            rangeBehavior: vscode.DecorationRangeBehavior.ClosedOpen,
+        });
+        editor.setDecorations(bgDt, [range]);
+        const bgTimeout = setTimeout(() => {
+            bgDt.dispose();
+            const idx = activeDecorations.findIndex(d => d.decoration === bgDt);
+            if (idx !== -1) { activeDecorations.splice(idx, 1); }
+        }, config.lifetimeMs * 0.6);
+        activeDecorations.push({ decoration: bgDt, timeout: bgTimeout });
+    }
+
+    // ── Before-content particles ──
+    for (let i = 0; i < Math.ceil(baseCount / 2); i++) {
+        const color = pick();
+        const content = useGlyph ? getContent(config, typedChar) : randomBurstChar(kind);
         const dt = vscode.window.createTextEditorDecorationType({
-            after: {
+            before: {
                 contentText: content,
                 color: color,
                 fontWeight: 'bold',
-                textDecoration: glow
-                    ? `none; text-shadow: 0 0 6px ${color}, 0 0 12px ${color};`
+                textDecoration: config.glow
+                    ? `none; text-shadow: 0 0 6px ${color}, 0 0 14px ${color};`
                     : 'none;',
-                margin: '0 0 0 2px',
+                margin: '0 2px 0 0',
             },
             rangeBehavior: vscode.DecorationRangeBehavior.ClosedOpen,
         });
-
-        const range = new vscode.Range(position, position);
         editor.setDecorations(dt, [range]);
-
         const timeout = setTimeout(() => {
             dt.dispose();
             const idx = activeDecorations.findIndex(d => d.decoration === dt);
             if (idx !== -1) { activeDecorations.splice(idx, 1); }
         }, config.lifetimeMs);
+        activeDecorations.push({ decoration: dt, timeout });
+    }
 
-        activeDecorations.push({ editor, decoration: dt, timeout });
+    // ── After-content particles ──
+    for (let i = 0; i < Math.ceil(baseCount / 2); i++) {
+        const color = pick();
+        const content = useGlyph ? getContent(config, typedChar) : randomBurstChar(kind);
+        const dt = vscode.window.createTextEditorDecorationType({
+            after: {
+                contentText: content,
+                color: color,
+                fontWeight: 'bold',
+                textDecoration: config.glow
+                    ? `none; text-shadow: 0 0 6px ${color}, 0 0 14px ${color};`
+                    : 'none;',
+                margin: '0 0 0 2px',
+            },
+            rangeBehavior: vscode.DecorationRangeBehavior.ClosedOpen,
+        });
+        editor.setDecorations(dt, [range]);
+        const timeout = setTimeout(() => {
+            dt.dispose();
+            const idx = activeDecorations.findIndex(d => d.decoration === dt);
+            if (idx !== -1) { activeDecorations.splice(idx, 1); }
+        }, config.lifetimeMs);
+        activeDecorations.push({ decoration: dt, timeout });
+    }
+}
+
+function randomBurstChar(kind: EventKind): string {
+    switch (kind) {
+        case 'delete':  return ['💨', '✖', '🗑', '❌', '💥'][Math.floor(Math.random() * 5)];
+        case 'tab':     return ['→', '⇥', '↹', '➜', '⇢'][Math.floor(Math.random() * 5)];
+        case 'enter':   return ['↵', '⏎', '↓', '↴', '⇓'][Math.floor(Math.random() * 5)];
+        case 'space':   return ['·', '∙', '○', '◦', '∘'][Math.floor(Math.random() * 5)];
+        default:        return '✦';
     }
 }
 
@@ -278,32 +354,14 @@ function openSettingsPanel(context: vscode.ExtensionContext) {
             case 'setCount':
                 await cfg.update('count', msg.value, true);
                 break;
-            case 'setGravity':
-                await cfg.update('gravity', msg.value, true);
-                break;
-            case 'setSpeed':
-                await cfg.update('speed', msg.value, true);
-                break;
-            case 'setSpread':
-                await cfg.update('spreadDeg', msg.value, true);
-                break;
             case 'setLifetime':
                 await cfg.update('lifetimeMs', msg.value, true);
-                break;
-            case 'setSize':
-                await cfg.update('size', msg.value, true);
                 break;
             case 'setGlow':
                 await cfg.update('glow', msg.value, true);
                 break;
             case 'setExplode':
                 await cfg.update('explode', msg.value, true);
-                break;
-            case 'setTrail':
-                await cfg.update('trail', msg.value, true);
-                break;
-            case 'setRotate3d':
-                await cfg.update('rotate3d', msg.value, true);
                 break;
             case 'setCombo':
                 await cfg.update('comboEnabled', msg.value, true);
@@ -372,7 +430,7 @@ export function activate(context: vscode.ExtensionContext): void {
         );
     }
 
-    // ── Real keystroke tracking via document change ───────
+    // ── Keystroke, delete, tab, enter tracking ────────────
     context.subscriptions.push(
         vscode.workspace.onDidChangeTextDocument((event) => {
             if (!enabled) { return; }
@@ -383,11 +441,29 @@ export function activate(context: vscode.ExtensionContext): void {
             const config = loadConfig();
 
             for (const change of event.contentChanges) {
-                // Only single-character insertions (keystrokes, not paste/multi-char)
-                if (change.text.length !== 1) { continue; }
-
+                const text = change.text;
+                const isDelete = text === '' && change.rangeLength > 0;
                 const pos = editor.document.positionAt(change.rangeOffset);
-                spawnDecorations(editor, pos, change.text, config);
+
+                if (isDelete) {
+                    // Deletion — spawn red burst at deletion point
+                    spawnBurst(editor, pos, config, 'delete', '');
+                    continue;
+                }
+
+                // Multi-char paste / auto-indent — skip
+                if (text.length > 1) { continue; }
+
+                const char = text;
+                if (char === '\t') {
+                    spawnBurst(editor, pos, config, 'tab', '\t');
+                } else if (char === '\n' || char === '\r\n') {
+                    spawnBurst(editor, pos, config, 'enter', '\n');
+                } else if (char === ' ') {
+                    spawnBurst(editor, pos, config, 'space', ' ');
+                } else {
+                    spawnBurst(editor, pos, config, 'insert', char);
+                }
             }
         })
     );
@@ -465,7 +541,6 @@ ${Object.entries(PRESETS).map(([k, v]) => `<button class="preset-btn" data-prese
 <div class="group">
 <h3>⚙️ Physics</h3>
 <div class="row"><label>Count</label><input type="range" id="count" min="1" max="50" oninput="setNum('setCount',this.value)"><span class="val" id="v-count">6</span></div>
-<div class="row"><label>Size (px)</label><input type="range" id="size" min="8" max="48" oninput="setNum('setSize',this.value)"><span class="val" id="v-size">14</span></div>
 <div class="row"><label>Lifetime ms</label><input type="range" id="lifetime" min="100" max="3000" oninput="setNum('setLifetime',this.value)"><span class="val" id="v-lifetime">500</span></div>
 </div>
 
