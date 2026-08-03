@@ -1,0 +1,36 @@
+{
+  "name": "imlec-typer",
+  "displayName": "imlec-typer",
+  "description": "Particle effects at your cursor while typing — letters, digits, emojis, shapes",
+  "version": "0.1.0",
+  "publisher": "koinkafasi",
+  "engines": { "vscode": "^1.74.0" },
+  "categories": ["Other"],
+  "activationEvents": ["onStartupFinished"],
+  "main": "./out/extension.js",
+  "contributes": {
+    "configuration": {
+      "title": "imlec-typer",
+      "properties": {
+        "imlec-typer.enabled": { "type": "boolean", "default": true, "description": "Enable particle effects" }
+      }
+    },
+    "commands": [
+      { "command": "imlec-typer.toggle", "title": "Toggle imlec-typer", "category": "imlec" },
+      { "command": "imlec-typer.preset.matrix", "title": "Preset: Matrix", "category": "imlec" },
+      { "command": "imlec-typer.preset.fireworks", "title": "Preset: Fireworks", "category": "imlec" },
+      { "command": "imlec-typer.preset.typewriter", "title": "Preset: Typewriter", "category": "imlec" },
+      { "command": "imlec-typer.preset.minimal", "title": "Preset: Minimal", "category": "imlec" }
+    ]
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/vscode": "^1.74.0",
+    "typescript": "^5.0.0"
+  }
+}
